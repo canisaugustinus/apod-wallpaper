@@ -1,0 +1,1 @@
+C:\Users\%USERNAME%\PycharmProjects\pythonProject\venv\Scripts\python.exe C:\Users\%USERNAME%\Documents\scripts\apod-wallpaper\apod_wallpaper.py
