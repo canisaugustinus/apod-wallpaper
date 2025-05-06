@@ -31,7 +31,7 @@ def pick_random_date(today: datetime) -> datetime:
 
 def random_retry(date: datetime) -> str | None:
     for i in range(MAX_ATTEMPTS):
-        image_random = download_apod(pick_random_date(date))
+        image_random, is_success = download_apod(pick_random_date(date))
         if image_random is not None:
             return image_random
     return None
@@ -47,11 +47,11 @@ def find_saved_image(date: datetime) -> Optional[str]:
     return None
 
 
-def download_apod(date: datetime) -> str | None:
+def download_apod(date: datetime) -> tuple[str, bool] | tuple[None, bool]:
     # do we already have date's APOD?
     file = find_saved_image(date)
     if file:
-        return file
+        return file, True
 
     img_url = None
     date_str = date.strftime("%Y-%m-%d")
@@ -88,13 +88,13 @@ def download_apod(date: datetime) -> str | None:
             image_path = join(APOD_DIRECTORY, date_str)
             image_path = f'{image_path}.{extension}'
             open(image_path, 'wb').write(image.content)
-            return image_path
+            return image_path, True
         except:
             print('Download failed.')
-            return None
+            return None, False
 
     print(f"{date_str}'s A\"P\"OD isn't an image.")
-    return None
+    return None, True
 
 
 def set_wallpaper(file: str):
@@ -139,12 +139,15 @@ def main():
     wallpaper_list = []
 
     # try "tomorrow's" APOD in case it's already up due to timezone differences
-    image_tomorrow = download_apod(tomorrow)
+    image_tomorrow, is_success = download_apod(tomorrow)
     if image_tomorrow is not None:
         wallpaper_list.append(image_tomorrow)
+    elif is_success:
+        # tomorrow's APOD isn't an image --- get a random APOD
+        pass
     else:
         # otherwise, try today's APOD
-        image_today = download_apod(today)
+        image_today, is_success = download_apod(today)
         if image_today is not None:
             wallpaper_list.append(image_today)
 
