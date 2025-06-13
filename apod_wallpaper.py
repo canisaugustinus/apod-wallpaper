@@ -1,23 +1,17 @@
-from os import listdir, environ
+from os import listdir
 from os.path import isfile, join
 import pathlib
 import json
 import requests
 from datetime import datetime, timedelta
-import ctypes
-from PIL import Image
 import random
 from typing import Optional
-from wallpapermanager import IDesktopWallpaper
-from ctypes.wintypes import RECT
+from os_platform import APOD_DIRECTORY, wallManager
 
 MAX_ATTEMPTS = 10
-MAIN_MONITOR_TOP_LEFT = {'top': 0, 'left': 0}  # https://learn.microsoft.com/en-us/windows/win32/api/windef/ns-windef-rect
-USERNAME = environ["USERNAME"]
 DIRECTORY = pathlib.Path(__file__).parent.resolve()
 with open(join(DIRECTORY, 'apod_api_key.json'), 'r') as api_key_file:
     APOD_API_KEY = json.load(api_key_file)['APOD_API_KEY']
-APOD_DIRECTORY = rf'C:\Users\{USERNAME}\Pictures\apod'
 IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif', '.webp')
 START_DATE = datetime(1995, 6, 16)  # first day of APOD
 
@@ -103,43 +97,7 @@ def download_apod(date: datetime) -> tuple[str, bool] | tuple[None, bool]:
         return None, False
 
 
-def set_wallpaper(file: str):
-    print(f'Changing the wallpaper to {file}')
-    # put the widest dimension along the horizontal
-    im = Image.open(file)
-    width, height = im.size
-    if height > width:
-        rotated = im.transpose(Image.ROTATE_270)
-        ext = file.split(".")[-1]
-        image_path = join(APOD_DIRECTORY, 'rotated')
-        image_path = f'{image_path}.{ext}'
-        rotated.save(image_path)
-    else:
-        image_path = file
-    ctypes.windll.user32.SystemParametersInfoW(20, 0, image_path, 3)
-
-
 def main():
-    # use the COM wallpaper manager
-    desk_wall = IDesktopWallpaper.coCreateInstance()
-    monitor_id_dict = desk_wall.findAllowedIDs()
-
-    main_monitor_id = None
-    for monitor_id in monitor_id_dict:
-        display_rect = monitor_id_dict[monitor_id]
-        if all((MAIN_MONITOR_TOP_LEFT['left'] == display_rect.left,
-            MAIN_MONITOR_TOP_LEFT['top'] == display_rect.top)):
-            main_monitor_id = monitor_id
-    if main_monitor_id is None:
-        raise Exception(f"Unable to find the main monitor. Is MAIN_MONITOR_TOP_LEFT={MAIN_MONITOR_TOP_LEFT} correct?")
-
-    # move the main monitor to the 0th position
-    monitor_id_list = list(monitor_id_dict.keys())
-    print(monitor_id_list)
-    monitor_id_list.remove(main_monitor_id)
-    monitor_id_list.insert(0, main_monitor_id)
-    print(monitor_id_list)
-
     today = datetime.today()
     tomorrow = today + timedelta(days=1)
     wallpaper_list = []
@@ -166,8 +124,11 @@ def main():
     if len(wallpaper_list) == 0:
         raise Exception(f"Unable to find an APOD for the main monitor after {MAX_ATTEMPTS} attempts.")
 
+    # get the number of monitors to see how many other wallpapers we need
+    num_monitors = wallManager.get_number_of_monitors()
+
     # random APODs for other monitors
-    for i_monitor in range(len(monitor_id_list)-1):
+    for i_monitor in range(num_monitors-1):
         image_random = random_retry(today)
         if image_random is not None:
             wallpaper_list.append(image_random)
@@ -175,12 +136,12 @@ def main():
             break
 
     # check if we have an image for all other monitors
-    if len(wallpaper_list) != len(monitor_id_list):
+    if len(wallpaper_list) != num_monitors:
         raise Exception(f"Unable to find an APOD for the other monitors after {MAX_ATTEMPTS} attempts.")
 
-    # assign wallpapers to each monitor
-    for monitor_id, wallpaper in zip(monitor_id_list, wallpaper_list):
-        desk_wall.setWallpaper(monitor_id, wallpaper)
+    # assign the wallpapers to each monitor
+    for i, wallpaper in enumerate(wallpaper_list):
+        wallManager.change_wallpaper(i, wallpaper)
 
 
 if __name__ == '__main__':

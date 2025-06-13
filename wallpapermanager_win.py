@@ -74,3 +74,25 @@ class IDesktopWallpaper(comtypes.IUnknown):
             except comtypes.COMError:
                 pass
         return allowed_ids
+
+
+class WallpaperManagerWin:
+    def __init__(self):
+        self._inst = IDesktopWallpaper.coCreateInstance()
+
+        # monitor ID indexing is from left to right
+        monitor_id_dict = self._inst.findAllowedIDs()
+        monitor_id_lef_dict = {}
+        for monitor_id in monitor_id_dict:
+            display_rect = monitor_id_dict[monitor_id]
+            monitor_id_lef_dict[monitor_id] = display_rect.left,
+        self._monitor_id_list = sorted(monitor_id_lef_dict, key=monitor_id_lef_dict.get)
+
+    def get_number_of_monitors(self) -> int:
+        return len(self._monitor_id_list)
+
+    def change_wallpaper(
+            self,
+            i: int,
+            image_path: str):
+        self._inst.setWallpaper(self._monitor_id_list[i], image_path)
