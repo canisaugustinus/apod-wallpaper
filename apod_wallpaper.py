@@ -47,26 +47,26 @@ def download_apod(date: datetime) -> tuple[str, bool] | tuple[None, bool]:
     if file:
         return file, True
 
-    img_url = None
     date_str = date.strftime("%Y-%m-%d")
-
+    img_url = None
     is_api_error = False
     try:  # get the image through the API
         url = f'https://api.nasa.gov/planetary/apod?api_key={APOD_API_KEY}&date={date_str}'
         print(f'Checking the API: {url}')
         response = requests.get(url, timeout=5).json()
         print(f'Response: {response}')
-        if 'media_type' in response and response['media_type'] == 'image':
+        if 'code' in response and response['code'] >= 400:
+            print(f"Error: response code = {response['code']}")
+            return None, False
+        elif 'date' in response and response['date'] != date_str:
+            print(f"Error: response date {response['date']} does not match {date_str}.")
+            return None, False
+        elif 'media_type' in response and response['media_type'] == 'image':
             if 'hdurl' in response and response['hdurl'].lower().endswith(IMAGE_EXTENSIONS):
                 img_url = response['hdurl']
             elif 'url' in response and response['url'].lower().endswith(IMAGE_EXTENSIONS):
                 img_url = response['url']
-        elif 'code' in response and response['code'] >= 400:
-            is_api_error = True
-    except requests.exceptions.ReadTimeout:
-        is_api_error = True
-
-    if is_api_error: # sometimes the API is down, but the site is up
+    except requests.exceptions.ReadTimeout:  # sometimes the API is down, but the site is up
         url = f'https://apod.nasa.gov/apod/ap{date.strftime("%y%m%d")}.html'
         print(f'Checking the site: {url}')
         response = requests.get(url).content.decode()
@@ -83,8 +83,7 @@ def download_apod(date: datetime) -> tuple[str, bool] | tuple[None, bool]:
         print(f"{date_str}'s A\"P\"OD isn't an image.")
         return None, True
 
-    # download the image and return the filepath
-    try:
+    try:  # download the image and return the filepath
         print(f'Downloading the image from this URL: {img_url}.')
         image = requests.get(img_url)
         extension = img_url.split(".")[-1]
