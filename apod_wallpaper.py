@@ -1,5 +1,5 @@
 from os import listdir
-from os.path import isfile, join
+from os.path import isfile, join, basename
 import pathlib
 import json
 import requests
@@ -25,41 +25,35 @@ def pick_random_date(today: datetime) -> datetime:
 
 def random_retry(date: datetime) -> str | None:
     for i in range(MAX_ATTEMPTS):
-        image_random = download_apod(pick_random_date(date))[0]
+        image_random, _ = download_apod(pick_random_date(date))
         if image_random is not None:
             return image_random
     return None
 
 
-def find_saved_image(date: datetime) -> Optional[str]:
-    date_str = date.strftime("%Y-%m-%d")
-    f_start = f'{date_str}.'
+def find_saved_image(base_name: str) -> Optional[str]:
     files = [f for f in listdir(APOD_DIRECTORY) if isfile(join(APOD_DIRECTORY, f))]
     for f in files:
-        if f.startswith(f_start):
+        if f == base_name:
             return join(APOD_DIRECTORY, f)
     return None
 
 
-def download_apod(date: datetime) -> tuple[str, bool] | tuple[None, bool]:
-    # do we already have date's APOD?
-    file = find_saved_image(date)
-    if file:
-        return file, True
-
+def download_apod(
+        date: datetime,
+        is_print: bool = True) -> tuple[str, bool] | tuple[None, bool]:
     date_str = date.strftime("%Y-%m-%d")
     img_url = None
-    is_api_error = False
     try:  # get the image through the API
         url = f'https://api.nasa.gov/planetary/apod?api_key={APOD_API_KEY}&date={date_str}'
-        print(f'Checking the API: {url}')
+        if is_print: print(f'Checking the API: {url}')
         response = requests.get(url, timeout=5).json()
-        print(f'Response: {response}')
+        if is_print: print(f'Response: {response}')
         if 'code' in response and response['code'] >= 400:
-            print(f"Error: response code = {response['code']}")
+            if is_print: print(f"Error: response code = {response['code']}")
             return None, False
         elif 'date' in response and response['date'] != date_str:
-            print(f"Error: response date {response['date']} does not match {date_str}.")
+            if is_print: print(f"Error: response date {response['date']} does not match {date_str}.")
             return None, False
         elif 'media_type' in response and response['media_type'] == 'image':
             if 'hdurl' in response and response['hdurl'].lower().endswith(IMAGE_EXTENSIONS):
@@ -68,9 +62,27 @@ def download_apod(date: datetime) -> tuple[str, bool] | tuple[None, bool]:
                 img_url = response['url']
     except requests.exceptions.ReadTimeout:  # sometimes the API is down, but the site is up
         url = f'https://apod.nasa.gov/apod/ap{date.strftime("%y%m%d")}.html'
-        print(f'Checking the site: {url}')
-        response = requests.get(url).content.decode()
-        print(f'Response: {response}')
+        if is_print: print(f'Checking the site: {url}')
+        response = requests.get(url).content.decode(errors='ignore')
+        if is_print: print(f'Response: {response}')
+
+        # is this the date we're looking for?
+        parsed_date = None
+        for line in response.splitlines():
+            line = line.strip()
+            try:
+                parsed_date = datetime.strptime(line, "%Y %B %d")
+                break
+            except ValueError:
+                pass
+        if parsed_date is None:
+            if is_print: print(f"Error: unable to find a date with the format '%Y %B %d' in the response.")
+            return None, False
+        if parsed_date.date() != date.date():
+            if is_print: print(f"Error: response date {parsed_date} does not match {date}.")
+            return None, False
+
+        # get the image URL
         if '<IMG SRC=' in response:
             hdurl, url = response.split('<IMG SRC=')[:2]
             hdurl, url = hdurl.split('"')[-2], url.split('"')[1]
@@ -80,19 +92,24 @@ def download_apod(date: datetime) -> tuple[str, bool] | tuple[None, bool]:
                 img_url = 'https://apod.nasa.gov/apod/' + url
 
     if img_url is None:
-        print(f"{date_str}'s A\"P\"OD isn't an image.")
+        if is_print: print(f"{date_str}'s A\"P\"OD isn't an image.")
         return None, True
 
     try:  # download the image and return the filepath
-        print(f'Downloading the image from this URL: {img_url}.')
+        if is_print: print(f'Downloading the image from this URL: {img_url}.')
+        base_name = basename(img_url)
+
+        # do we already have date's APOD?
+        file = find_saved_image(base_name)
+        if file:
+            return file, True
+
         image = requests.get(img_url)
-        extension = img_url.split(".")[-1]
-        image_path = join(APOD_DIRECTORY, date_str)
-        image_path = f'{image_path}.{extension}'
+        image_path = join(APOD_DIRECTORY, base_name)
         open(image_path, 'wb').write(image.content)
         return image_path, True
     except Exception as e:
-        print(f'Download failed with Exception {e}.')
+        if is_print: print(f'Download failed with Exception {e}.')
         return None, False
 
 
@@ -109,7 +126,7 @@ def main():
         pass # tomorrow's APOD isn't an image --- get a random APOD
     else:
         # otherwise, try today's APOD
-        image_today = download_apod(today)[0]
+        image_today, _ = download_apod(today)
         if image_today is not None:
             wallpaper_list.append(image_today)
 
@@ -141,6 +158,20 @@ def main():
     # assign the wallpapers to each monitor
     for i, wallpaper in enumerate(wallpaper_list):
         wallManager.change_wallpaper(i, wallpaper)
+
+def om_update():
+    from os.path import splitext
+    import time
+    files = [f for f in listdir(APOD_DIRECTORY) if isfile(join(APOD_DIRECTORY, f))]
+    for i, f in enumerate(files, 1):
+        print(f"{100.0*i/len(files)}%")
+        datestr, _ = splitext(basename(f))
+        date = datetime.strptime(datestr, "%Y-%m-%d")
+        image, valid_day = download_apod(date, rf'/var/home/blah/Pictures/apod2/')
+        if image is None:
+            print(f"Bad date: {date}")
+        if valid_day is not None:
+            time.sleep(3)
 
 
 if __name__ == '__main__':
