@@ -75,6 +75,11 @@ def download_apod(
                 break
             except ValueError:
                 pass
+            try:
+                parsed_date = datetime.strptime(line, "%B %d, %Y")
+                break
+            except ValueError:
+                pass
         if parsed_date is None:
             if is_print: print(f"Error: unable to find a date with the format '%Y %B %d' in the response.")
             return None, False
